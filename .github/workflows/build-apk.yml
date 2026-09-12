@@ -30,11 +30,11 @@ jobs:
           sdkmanager "platforms;android-35"
           sdkmanager "build-tools;35.0.0"
 
-      - name: Extract Android project
+      - name: Extract project
         run: |
           rm -rf build-src
           mkdir build-src
-          unzip -q Xiaomi15-DuoWallpaper-phone-deploy.zip -d build-src
+          unzip -q Xiaomi15-DuoWallpaper-v3-clean.zip -d build-src
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -42,12 +42,12 @@ jobs:
           gradle-version: '8.7'
 
       - name: Build APK
-        working-directory: build-src/Xiaomi15-DuoWallpaper-v2
+        working-directory: build-src/Xiaomi15-DuoWallpaper-v3
         run: gradle --no-daemon assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: Xiaomi15-DuoWallpaper-debug
-          path: build-src/Xiaomi15-DuoWallpaper-v2/app/build/outputs/apk/debug/*.apk
+          name: Xiaomi15-DuoWallpaper-v3-debug
+          path: build-src/Xiaomi15-DuoWallpaper-v3/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
