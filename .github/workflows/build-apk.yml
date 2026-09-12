@@ -34,7 +34,7 @@ jobs:
         run: |
           rm -rf build-src
           mkdir build-src
-          unzip -q Xiaomi15-DuoWallpaper-v3-fixed.zip -d build-src
+          unzip -q Xiaomi15-DuoWallpaper-v4.zip -d build-src
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
