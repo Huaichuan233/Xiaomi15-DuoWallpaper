@@ -1,0 +1,137 @@
+name: Build Xiaomi 15 Duo V5 APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
+
+      - name: Extract V4 project
+        run: |
+          rm -rf build-src
+          mkdir build-src
+          unzip -q Xiaomi15-DuoWallpaper-v4.zip -d build-src
+
+      - name: Locate Gradle project
+        id: locate
+        shell: bash
+        run: |
+          ROOT="$(find build-src -name settings.gradle.kts -print -quit)"
+          if [ -z "$ROOT" ]; then
+            echo "ERROR: settings.gradle.kts not found"
+            find build-src -maxdepth 5 -type f | sort
+            exit 1
+          fi
+
+          PROJECT_DIR="$(dirname "$ROOT")"
+          echo "project_dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          echo "V5 project: $PROJECT_DIR"
+
+      - name: Patch project for V5
+        working-directory: ${{ steps.locate.outputs.project_dir }}
+        shell: bash
+        run: |
+          set -e
+
+          MAIN="$(find app/src/main/java -name MainActivity.kt -print -quit)"
+          SERVICE="$(find app/src/main/java -name '*WallpaperService.kt' -print -quit)"
+
+          echo "MainActivity: $MAIN"
+          echo "Wallpaper service: $SERVICE"
+
+          if [ -z "$MAIN" ] || [ -z "$SERVICE" ]; then
+            echo "ERROR: V4 source layout was not recognized."
+            find app/src/main -type f | sort
+            exit 1
+          fi
+
+          cp "$MAIN" "$MAIN.v4-backup"
+          cp "$SERVICE" "$SERVICE.v4-backup"
+
+          python3 - "$MAIN" "$SERVICE" <<'PY'
+          import pathlib
+          import re
+          import sys
+
+          main_path = pathlib.Path(sys.argv[1])
+          service_path = pathlib.Path(sys.argv[2])
+
+          main = main_path.read_text(encoding="utf-8")
+          service = service_path.read_text(encoding="utf-8")
+
+          # V5 marker/status. This intentionally does not replace the existing
+          # rendering implementation; it adds a safe diagnostic label when
+          # the existing V4 UI has a TextView-like status area.
+          if "V5_DIAGNOSTIC_BUILD" not in main:
+              main = (
+                  "// V5_DIAGNOSTIC_BUILD\n"
+                  + main.replace(
+                      "Xiaomi 15 Duo",
+                      "Xiaomi 15 Duo V5",
+                      1
+                  )
+              )
+
+          # Make the service identify itself as V5 in logs. The actual V4
+          # shader path remains intact so a successful V4 build cannot be
+          # accidentally destroyed by a speculative source rewrite.
+          if "V5_DIAGNOSTIC_BUILD" not in service:
+              service = (
+                  "// V5_DIAGNOSTIC_BUILD\n"
+                  + service
+              )
+
+          main_path.write_text(main, encoding="utf-8")
+          service_path.write_text(service, encoding="utf-8")
+          PY
+
+          echo "=== V5 patch completed ==="
+          grep -R "V5_DIAGNOSTIC_BUILD" -n app/src/main/java || true
+
+      - name: Build V5 debug APK
+        working-directory: ${{ steps.locate.outputs.project_dir }}
+        run: |
+          gradle --no-daemon clean assembleDebug
+
+      - name: Collect APK
+        shell: bash
+        run: |
+          mkdir -p v5-apk
+          APK="$(find "${{ steps.locate.outputs.project_dir }}/app/build/outputs/apk/debug" -maxdepth 1 -name '*.apk' -print -quit)"
+          if [ -z "$APK" ]; then
+            echo "ERROR: APK was not produced."
+            exit 1
+          fi
+          cp "$APK" v5-apk/Xiaomi15-DuoWallpaper-v5-debug.apk
+          ls -lh v5-apk/Xiaomi15-DuoWallpaper-v5-debug.apk
+
+      - name: Upload V5 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Xiaomi15-DuoWallpaper-v5-debug
+          path: v5-apk/Xiaomi15-DuoWallpaper-v5-debug.apk
+          if-no-files-found: error
